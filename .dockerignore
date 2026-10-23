@@ -1,0 +1,30 @@
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info
+.eggs
+# 仅忽略仓库根目录的 dist/build（勿写裸 `dist`，否则无法把 frontend/dist 打入预构建镜像）
+/dist/
+/build/
+
+frontend/node_modules
+
+# 本地数据不入镜像（运行时卷挂载）
+backend/data/*.db
+
+# 文档与计划
+*.md
+!README.md
+
+images
+.cursor
+mcps
+
+# 置于末尾：若曾误加裸 `dist` 等规则，可强制把预构建产物纳入上下文
+!frontend/dist/

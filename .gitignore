@@ -1,0 +1,59 @@
+# Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+.Python
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# 仅忽略仓库根目录的构建产物
+/dist/
+/build/
+
+# Node / Vite
+node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/.vite/
+*.tsbuildinfo
+
+# 本地数据与密钥（SQLite 中可能存 API Key）
+backend/data/*.db
+backend/data/*.db-journal
+backend/data/*.db-wal
+backend/data/*.db-shm
+.env
+.env.*
+!.env.example
+
+# 运行缓存与日志
+.cache/
+*.log
+*.tmp
+*.temp
+
+# IDE / 编辑器
+.idea/
+.cursor/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
