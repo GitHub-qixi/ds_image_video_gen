@@ -104,9 +104,11 @@ export default function Home() {
   const [ocrResult, setOcrResult] = useState<string>("");
   const [isOcrDragOver, setIsOcrDragOver] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
-  const [editingKey, setEditingKey] = useState<"dashscope" | "ark" | null>(
-    null,
-  );
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [llmProvider, setLlmProvider] = useState("dashscope");
+  const [llmModel, setLlmModel] = useState("qwen-max");
+  const [llmBaseUrl, setLlmBaseUrl] = useState("");
+  const [plannerKey, setPlannerKey] = useState("");
   const [showMainImageLibrary, setShowMainImageLibrary] = useState(false);
   const [selectedMainImages, setSelectedMainImages] = useState<number[]>([]);
   const [activeImageTab, setActiveImageTab] = useState<
@@ -129,6 +131,9 @@ export default function Home() {
       if (!r.ok) throw new Error(await r.text());
       const j = (await r.json()) as ServerSettings;
       setServerSettings(j);
+      setLlmProvider(j.llm_provider || "dashscope");
+      setLlmModel(j.llm_model || "qwen-max");
+      setLlmBaseUrl(j.llm_base_url || "");
       // 不再自动打开编辑状态，让用户手动点击添加
     } catch (err) {
       console.error("Failed to load server settings:", err);
@@ -430,10 +435,11 @@ export default function Home() {
       appendLog("正在加载服务器设置，请稍候...");
       return;
     }
-    if (!serverSettings.has_dashscope_key && !serverSettings.has_ark_key) {
-      appendLog(
-        "请先在右上角设置中配置API Key（阿里百炼或即梦ARK），再提取关键信息。",
-      );
+    const planner = (serverSettings.llm_providers ?? []).find(
+      (p) => p.id === (serverSettings.llm_provider || "dashscope"),
+    );
+    if (!planner?.has_key && !serverSettings.has_dashscope_key) {
+      appendLog("请先在右上角设置中配置当前规划平台的 API Key，再提取关键信息。");
       return;
     }
     setBusy(true);
@@ -850,6 +856,82 @@ export default function Home() {
     }
   };
 
+  const llmProviderOptions = (serverSettings?.llm_providers ?? []).map((p) => ({
+    value: p.id,
+    label: p.name,
+  }));
+  const currentLlmSpec = (serverSettings?.llm_providers ?? []).find(
+    (p) => p.id === llmProvider,
+  );
+  const showPlannerKeyCard =
+    !!currentLlmSpec &&
+    currentLlmSpec.id !== "dashscope" &&
+    currentLlmSpec.id !== "volcengine";
+
+  const onSaveLlmConfig = async () => {
+    setBusy(true);
+    try {
+      const r = await fetch("/api/settings/llm", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: llmProvider,
+          model: llmModel.trim(),
+          base_url: llmBaseUrl.trim(),
+        }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      appendLog(`已切换规划模型：${currentLlmSpec?.name ?? llmProvider} / ${llmModel}\n`);
+      await loadServerSettings();
+    } catch (e) {
+      appendLog(`保存规划模型失败：${e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onSavePlannerKey = async () => {
+    if (!plannerKey.trim()) {
+      appendLog("请先输入当前规划平台 API Key。\n");
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await fetch("/api/settings/llm-key", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: llmProvider,
+          api_key: plannerKey.trim(),
+        }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      appendLog(`已保存 ${currentLlmSpec?.name ?? llmProvider} Key。\n`);
+      setPlannerKey("");
+      await loadServerSettings();
+    } catch (e) {
+      appendLog(`保存规划平台 Key 失败：${e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onClearPlannerKey = async () => {
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/settings/llm-key/${llmProvider}`, {
+        method: "DELETE",
+      });
+      if (!r.ok) throw new Error(await r.text());
+      appendLog(`已清除 ${currentLlmSpec?.name ?? llmProvider} Key。\n`);
+      await loadServerSettings();
+    } catch (e) {
+      appendLog(`清除规划平台 Key 失败：${e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const renderRefWhiteCell = (s: SlotRow) => {
     const refItems =
       s.kind === "detail" && detailWhiteImageItems.length > 0
@@ -1021,7 +1103,7 @@ export default function Home() {
         >
           <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
             <div className="settings-modal-header">
-              <h3>API Key 设置</h3>
+              <h3>模型与 API Key</h3>
               <Button
                 className="btn-close"
                 htmlType="button"
@@ -1031,6 +1113,152 @@ export default function Home() {
               </Button>
             </div>
             <div className="settings-modal-content">
+              <div className="api-key-card">
+                <div className="api-key-header">
+                  <span className="api-key-name">文本规划模型</span>
+                </div>
+                <p className="llm-config-hint">
+                  提取关键信息、生成提示词走这里。OCR / 万相仍用阿里百炼，即梦生图仍用
+                  ARK。未列出的平台选「自定义 OpenAI 兼容」并填写 Base URL。
+                </p>
+                <div className="llm-config-row">
+                  <span className="llm-config-label">平台</span>
+                  <Select
+                    className="llm-config-select"
+                    value={llmProvider}
+                    options={llmProviderOptions}
+                    onChange={(value) => {
+                      setLlmProvider(value);
+                      const next = (serverSettings?.llm_providers ?? []).find(
+                        (p) => p.id === value,
+                      );
+                      setLlmModel(next?.default_model || "");
+                      setLlmBaseUrl(next?.base_url || "");
+                    }}
+                  />
+                </div>
+                <div className="llm-config-row">
+                  <span className="llm-config-label">模型</span>
+                  <Input
+                    className="input"
+                    placeholder="模型名或方舟推理接入点 ID"
+                    value={llmModel}
+                    onChange={(e) => setLlmModel(e.target.value)}
+                  />
+                  {currentLlmSpec && currentLlmSpec.models.length > 0 && (
+                    <Select
+                      className="llm-config-select"
+                      placeholder="常用模型"
+                      value={
+                        currentLlmSpec.models.includes(llmModel)
+                          ? llmModel
+                          : undefined
+                      }
+                      options={currentLlmSpec.models.map((m) => ({
+                        value: m,
+                        label: m,
+                      }))}
+                      onChange={setLlmModel}
+                    />
+                  )}
+                </div>
+                {(currentLlmSpec?.requires_base_url ||
+                  llmProvider === "custom" ||
+                  llmProvider === "azure") && (
+                  <div className="llm-config-row">
+                    <span className="llm-config-label">Base URL</span>
+                    <Input
+                      className="input"
+                      placeholder="https://example.com/v1"
+                      value={llmBaseUrl}
+                      onChange={(e) => setLlmBaseUrl(e.target.value)}
+                    />
+                  </div>
+                )}
+                <div className="btn-row">
+                  <Button
+                    className="btn-save"
+                    htmlType="button"
+                    disabled={busy}
+                    onClick={() => {
+                      void onSaveLlmConfig();
+                    }}
+                  >
+                    保存规划模型
+                  </Button>
+                </div>
+              </div>
+
+              {showPlannerKeyCard && (
+                <div className="api-key-card">
+                  <div className="api-key-header">
+                    <span className="api-key-name">
+                      {currentLlmSpec?.name ?? "规划平台"} Key
+                    </span>
+                    <div className="api-key-status">
+                      <span
+                        className={`status-indicator ${currentLlmSpec?.has_key ? "active" : "inactive"}`}
+                      ></span>
+                      <span className="status-text">
+                        {currentLlmSpec?.has_key
+                          ? `已保存 ${currentLlmSpec.key_preview ?? ""}`
+                          : "未设置"}
+                      </span>
+                      <Button
+                        className="btn-edit"
+                        htmlType="button"
+                        onClick={() =>
+                          setEditingKey(
+                            editingKey === "planner" ? null : "planner",
+                          )
+                        }
+                      >
+                        {editingKey === "planner"
+                          ? "收起"
+                          : currentLlmSpec?.has_key
+                            ? "编辑"
+                            : "添加"}
+                      </Button>
+                    </div>
+                  </div>
+                  {editingKey === "planner" && (
+                    <div className="api-key-edit">
+                      <Input
+                        className="input"
+                        type="password"
+                        placeholder={`输入 ${currentLlmSpec?.name ?? ""} Key`}
+                        value={plannerKey}
+                        onChange={(e) => setPlannerKey(e.target.value)}
+                      />
+                      <div className="btn-row">
+                        <Button
+                          className="btn-save"
+                          htmlType="button"
+                          disabled={busy}
+                          onClick={() => {
+                            void onSavePlannerKey();
+                            setEditingKey(null);
+                          }}
+                        >
+                          保存
+                        </Button>
+                        <Button
+                          className="btn-cancel"
+                          htmlType="button"
+                          disabled={busy}
+                          onClick={() => {
+                            void onClearPlannerKey();
+                            setEditingKey(null);
+                          }}
+                        >
+                          清除
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="api-key-card">
                 <div className="api-key-header">
                   <span className="api-key-name">阿里百炼 (DashScope)</span>

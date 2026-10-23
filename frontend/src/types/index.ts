@@ -7,6 +7,18 @@ export type SlotRow = {
   export_path?: string | null;
 };
 
+export type LlmProviderInfo = {
+  id: string;
+  name: string;
+  default_model: string;
+  models: string[];
+  base_url: string;
+  requires_base_url: boolean;
+  has_key: boolean;
+  key_preview?: string | null;
+  env_key?: string;
+};
+
 export type ServerSettings = {
   has_dashscope_key: boolean;
   dashscope_key_preview?: string | null;
@@ -14,6 +26,10 @@ export type ServerSettings = {
   has_ark_key?: boolean;
   ark_key_preview?: string | null;
   ark_key_updated_at?: string | null;
+  llm_provider?: string;
+  llm_model?: string;
+  llm_base_url?: string | null;
+  llm_providers?: LlmProviderInfo[];
 };
 
 export type ExtractResponse = {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 from contextlib import asynccontextmanager
 import gc
 import io
@@ -21,10 +22,12 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db, init_db
 from app.deps import (
+    bind_llm_runtime,
     get_ark_api_key_optional,
     get_dashscope_api_key_optional,
     resolve_api_key,
 )
+from onemix.services.llm_router import LLMRuntime
 from app.jobs_store import get_job, start_generate_job
 from app.providers.dashscope_provider import DashScopeProvider
 from app.ref_paths import default_ref_white_index
@@ -97,7 +100,8 @@ def health() -> dict[str, str]:
 
 async def _run_blocking(call):
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(_api_pool, call)
+    ctx = contextvars.copy_context()
+    return await loop.run_in_executor(_api_pool, lambda: ctx.run(call))
 
 
 def _decode_text_bytes(data: bytes) -> str:
@@ -150,7 +154,10 @@ async def api_ocr(
 
 @app.post("/api/extract/key-info", response_model=ExtractInfoOut)
 async def api_extract_key_info(
-    api_key: Annotated[str, Depends(resolve_api_key)],
+    db: Annotated[Session, Depends(get_db)],
+    llm: Annotated[LLMRuntime, Depends(bind_llm_runtime)],
+    x_dashscope_key: Annotated[str | None, Header(alias="X-DashScope-Key")] = None,
+    authorization: Annotated[str | None, Header()] = None,
     files: list[UploadFile] = File(...),
 ) -> ExtractInfoOut:
     if not files:
@@ -170,11 +177,19 @@ async def api_extract_key_info(
                 raise HTTPException(413, f"文件过大: {name}")
             if _is_image_upload(name, f.content_type):
                 image_count += 1
+                ds_key = get_dashscope_api_key_optional(
+                    db=db, x_dashscope_key=x_dashscope_key, authorization=authorization
+                )
+                if not ds_key:
+                    raise HTTPException(
+                        401,
+                        "图片 OCR 仍需阿里百炼 Key：请在设置中保存，或通过 X-DashScope-Key 提供。",
+                    )
                 p = _write_temp_upload(data, Path(name).suffix or ".png")
                 temp_images.append(p)
 
                 def ocr_work() -> str:
-                    return dashscope_svc.ocr_from_image(api_key=api_key, image_path=p)
+                    return dashscope_svc.ocr_from_image(api_key=ds_key, image_path=p)
 
                 text = await _run_blocking(ocr_work)
                 merged_parts.append(f"## 文件: {name}\n{text.strip()}")
@@ -188,7 +203,7 @@ async def api_extract_key_info(
             raise HTTPException(400, "未解析出有效文本，请检查上传内容")
 
         def extract_work() -> dict:
-            return dashscope_svc.extract_key_info_from_text(api_key=api_key, text=merged_text)
+            return dashscope_svc.extract_key_info_from_text(api_key=llm.api_key, text=merged_text)
 
         extracted = await _run_blocking(extract_work)
         return ExtractInfoOut(
@@ -232,14 +247,14 @@ async def api_competitor(
 
 @app.post("/api/plan/slots")
 async def api_plan_slots(
-    api_key: Annotated[str, Depends(resolve_api_key)],
+    llm: Annotated[LLMRuntime, Depends(bind_llm_runtime)],
     provider: Annotated[DashScopeProvider, Depends(get_provider)],
     body: PlanSlotsBody,
 ) -> dict[str, object]:
 
     def work() -> list[tuple[str, int, str]]:
         return provider.plan_background_prompts_for_slots(
-            api_key=api_key,
+            api_key=llm.api_key,
             product_name=body.product_name,
             product_desc=body.product_desc,
             competitor_summary=body.competitor_summary,
@@ -268,14 +283,14 @@ async def api_plan_slots(
 
 @app.post("/api/plan/single")
 async def api_plan_single(
-    api_key: Annotated[str, Depends(resolve_api_key)],
+    llm: Annotated[LLMRuntime, Depends(bind_llm_runtime)],
     provider: Annotated[DashScopeProvider, Depends(get_provider)],
     body: PlanSingleBody,
 ) -> dict[str, str]:
 
     def work() -> str:
         return provider.plan_single_slot_prompt(
-            api_key=api_key,
+            api_key=llm.api_key,
             product_name=body.product_name,
             product_desc=body.product_desc,
             competitor_summary=body.competitor_summary,

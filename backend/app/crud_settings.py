@@ -72,3 +72,29 @@ def delete_ark_api_key(db: Session) -> None:
     if row:
         db.delete(row)
         db.commit()
+
+
+def get_value(db: Session, key: str) -> str | None:
+    row = db.get(Setting, key)
+    if not row or not row.value:
+        return None
+    s = row.value.strip()
+    return s or None
+
+
+def set_value(db: Session, key: str, value: str) -> None:
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    row = db.get(Setting, key)
+    if row:
+        row.value = value
+        row.updated_at = now
+    else:
+        db.add(Setting(key=key, value=value, updated_at=now))
+    db.commit()
+
+
+def delete_value(db: Session, key: str) -> None:
+    row = db.get(Setting, key)
+    if row:
+        db.delete(row)
+        db.commit()

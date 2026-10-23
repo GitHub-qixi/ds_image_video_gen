@@ -76,6 +76,29 @@ class ArkKeyIn(BaseModel):
     api_key: str = Field(min_length=1, description="写入 SQLite 的 ARK API Key")
 
 
+class LLMProviderOut(BaseModel):
+    id: str
+    name: str
+    default_model: str
+    models: list[str] = Field(default_factory=list)
+    base_url: str = ""
+    requires_base_url: bool = False
+    has_key: bool = False
+    key_preview: Optional[str] = None
+    env_key: str = ""
+
+
+class LLMConfigIn(BaseModel):
+    provider: str = Field(min_length=1)
+    model: str = ""
+    base_url: str = ""
+
+
+class LLMKeyIn(BaseModel):
+    provider: str = Field(min_length=1)
+    api_key: str = Field(min_length=1, description="写入 SQLite 的平台 API Key")
+
+
 class SettingsOut(BaseModel):
     has_dashscope_key: bool
     dashscope_key_preview: Optional[str] = Field(
@@ -91,6 +114,10 @@ class SettingsOut(BaseModel):
     ark_key_updated_at: Optional[str] = Field(
         default=None, description="ISO8601 时间（UTC 存库为 naive 时按本地展示）"
     )
+    llm_provider: str = "dashscope"
+    llm_model: str = "qwen-max"
+    llm_base_url: Optional[str] = None
+    llm_providers: list[LLMProviderOut] = Field(default_factory=list)
 
 
 class ExtractInfoOut(BaseModel):

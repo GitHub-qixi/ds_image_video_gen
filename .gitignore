@@ -47,7 +47,9 @@ backend/data/*.db-shm
 
 # IDE / 编辑器
 .idea/
-.cursor/
+.cursor/*
+!.cursor/skills/
+!.cursor/skills/**
 *.swp
 *.swo
 *~

@@ -14,7 +14,7 @@ from typing import Any, Optional
 
 import dashscope
 import requests
-from dashscope import Generation, ImageSynthesis, MultiModalConversation
+from dashscope import ImageSynthesis, MultiModalConversation
 from dashscope.utils.oss_utils import OssUtils
 from onemix.services import prompt_templates as prompts
 
@@ -142,22 +142,10 @@ def extract_key_info_from_text(*, api_key: str, text: str) -> dict[str, Any]:
 
 
 def _generation_text(*, api_key: str, prompt: str, model: str = PLANNER_TEXT_MODEL) -> str:
-    _set_key(api_key)
-    if "qwen-max" in (model or "").lower():
-        prompt = f"【System Prompt】{prompts.QWEN_MAX_PROMPT_SYSTEM_CONSTRAINT}\n\n{prompt}"
-    resp = Generation.call(model=model, prompt=prompt, api_key=api_key)
-    if resp.status_code != 200:
-        raise RuntimeError(getattr(resp, "message", None) or str(resp))
-    out = resp.output
-    if not out:
-        raise RuntimeError("规划模型无输出")
-    if getattr(out, "text", None):
-        return str(out.text).strip()
-    if getattr(out, "choices", None) and out.choices:
-        c = out.choices[0].message.content
-        if isinstance(c, str):
-            return c.strip()
-    raise RuntimeError("无法解析规划模型输出")
+    """文本规划统一走 OpenAI 兼容调度，不再绑定百炼 Generation.call。"""
+    from onemix.services.llm_router import chat_text
+
+    return chat_text(prompt=prompt, fallback_api_key=api_key, fallback_model=model)
 
 
 def _has_chinese(text: str) -> bool:
